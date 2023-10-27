@@ -38,11 +38,45 @@ LEDのカソードと1815のコレクタをそれぞれ繋げる
 ## ピン変更しやすくする
 ### マクロ定義
 
+```cpp
+#define pin_l1 15
+#define pin_l2 14
+#define pin_l3 13
+```
+
 ### グローバル変数で宣言する
-constexpr
+```cpp
+constexpr int pin_l1 = 15;
+constexpr int pin_l2 = 14;
+constexpr int pin_l3 = 13;
+```
 
 このときのプログラムの構造
-図
+図はむずかった。コードもめんどくさくなった
+```cpp
+#include <Arduino.h>
+
+constexpr int LEDpin[3] = {15, 14, 13};
+
+void user_main(){
+    pinMode(LEDpin[0], OUTPUT);
+    pinMode(LEDpin[1], OUTPUT);
+    pinMode(LEDpin[2], OUTPUT);
+
+    while(1){
+        busout(0x11);
+        delay(500);
+        busout(0x00);
+        delay(500);
+    }
+}
+
+void setup(){
+    user_main();
+}
+
+void loop(){}
+```
 
 ## 2つ以上に増やすときに問題となる点
 pinMode、digitalWriteが足りない
@@ -50,10 +84,105 @@ pinMode、digitalWriteが足りない
 解決策のヒントとしてLEDをN（任意の自然数）回だけ点滅させるプログラムを書く。
 for文、while文両方で書けるように
 
+```cpp
+int num_flash = 3; //点滅回数
+
+void user_main(){
+    pinMode(LEDpin, OUTPUT);
+
+    for(int i = 0; i < num_flash; i++){
+        digitalWrite(LEDpin, HIGH);
+        delay(500);
+        digitalWrite(LEDpin, LOW);
+        delay(500);
+    }
+}
+```
+
+```cpp
+int num_flash = 3; //点滅回数
+
+void user_main(){
+    pinMode(LEDpin, OUTPUT);
+
+    int i = 0;
+    while(i < 3){
+        digitalWrite(LEDpin, HIGH);
+        delay(500);
+        digitalWrite(LEDpin, LOW);
+        delay(500);
+
+        i++;
+    }
+}
+```
+
 ## initializer関数を作る
 ピン数を指定する変数を用意し、for文でpinModeする
+```cpp
+int num_pin = 3; //ピン数
+
+void user_main(){
+    for(int i = 0; i < num_pin; i++){
+        pinMode(LEDpin[i], OUTPUT);
+    }
+
+    ~~~    
+}
+```
 
 ## busout関数を書き換える
 ピン数を指定する変数から、for文といい感じにビット振り分けする演算を実装する
 
+むずい
+
 ## クラスでまとめる
+
+動作確認はしてないが多分行ける。
+
+```cpp
+class BusOut{ // the number of gpio pin is limited to 8 pins.
+private:
+    int LEDpins[8];
+
+    BusOut(int* _LEDpins, int _num_pins){
+        for(int i = 0; i < 8; i++){
+            pinMode(*(_LEDpins + i), OUTPUT);
+        }
+    }
+
+    void operator = (int value){
+        bool bit[8] = {
+            value / 128,
+            value % 128 / 64,
+            value % 128 % 64 / 32,
+            value % 128 % 64 % 32 / 16,
+            value % 128 % 64 % 32 % 16 / 8,
+            value % 128 % 64 % 32 % 16 % 8 / 4,
+            value % 128 % 64 % 32 % 16 % 8 % 4 / 2,
+            value % 128 % 64 % 32 % 16 % 8 % 4 % 2,
+        }
+
+        for(int i = 0; i < 8; i++){
+            digitalOut(*(_LEDpins + i), bit[i]);
+        }
+    }
+};
+```
+
+### 説明　ポインタ渡し
+
+変数を関数の呼び出しの（）内に書くことによって、関数に値を入れることが出来る。
+しかし、同じような引数がいっぱいあり、関数の呼び出しの（）内にいっぱい書くのが面倒なことがある。GPIOピンがいっぱいとか、そんなときに使える記法。
+
+まず変数は、パソコンの構成部品の一つである、**メモリ**に保存されている。そしてプログラムを実行するパソコンのシステムは、その変数を読み込むとき、変数のメモリ上の住所を見て読み込む。この住所をアドレスという。
+
+ポインタとは、変数が保存されているアドレスのことである。つまり、アドレスを直接考えることで変数のあれこれを考える方法である。
+
+**使い方**
+1. 同じような変数を配列でまとめる。こうすると、今回の場合LEDpins[0]とLEDpins[1]とはアドレスが連続し、&LEDpins[0] + 1 == &LEDpins[1] はtrueとなる。
+2. 配列の一番最初、今回ならLEDpins[0]のアドレスを渡す。
+3. 1で説明した性質を利用しfor文とかで回して参照する。
+
+### 説明　オペレーターオーバーロード
+[mbedのBusOut](https://os.mbed.com/users/okini3939/notebook/BusOut_jp/)を真似したかったのでつかった。出力出来るようになる
